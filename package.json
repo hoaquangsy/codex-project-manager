@@ -1,0 +1,46 @@
+{
+  "name": "codex-project-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop tool for managing Codex projects and local dev servers.",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && electron .\"",
+    "build": "vite build",
+    "dist": "npm run build && electron-builder --win portable",
+    "pack:dir": "npm run build && electron-builder --win dir",
+    "pack:zip": "npm run pack:dir && powershell -NoProfile -ExecutionPolicy Bypass -Command \"$zip='release/Codex-Project-Manager-portable.zip'; if(Test-Path $zip){Remove-Item $zip -Force}; Compress-Archive -Path 'release/win-unpacked/*' -DestinationPath $zip -CompressionLevel Optimal\"",
+    "start": "electron .",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "build": {
+    "appId": "local.codex.project-manager",
+    "productName": "Codex Project Manager",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ]
+    }
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.2.1",
+    "electron": "^42.0.1",
+    "electron-builder": "^26.0.12",
+    "vite": "^7.1.10",
+    "wait-on": "^8.0.4"
+  }
+}
