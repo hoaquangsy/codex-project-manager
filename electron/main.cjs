@@ -10,7 +10,7 @@ const isDev = !app.isPackaged;
 const running = new Map();
 const portRuntime = new Map();
 const logBuffers = new Map();
-const DETECTION_VERSION = 5;
+const DETECTION_VERSION = 6;
 const PORTABLE_PROJECT_NAMES = [
   "9router",
   "n8n-local",
@@ -219,7 +219,7 @@ function pushLog(projectId, processId, stream, text) {
       if (stream === "stderr" || /error|failed|exception|traceback/i.test(line)) {
         procState.lastError = line;
       }
-      const url = findUrl(line);
+      const url = stream === "system" ? "" : findUrl(line);
       if (url && !procState.detectedUrl) procState.detectedUrl = url;
     }
     mainWindow?.webContents.send("process:log", entry);
@@ -228,9 +228,12 @@ function pushLog(projectId, processId, stream, text) {
 }
 
 function findUrl(line) {
-  const urlMatch = String(line).match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[[^\]]+\])(?::\d+)?[^\s)]*/i);
+  const text = String(line);
+  const urlMatch = text.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[[^\]]+\])(?::\d+)?[^\s)]*/i);
   if (urlMatch) return urlMatch[0].replace("0.0.0.0", "localhost");
-  const portMatch = String(line).match(/(?:listening|ready|local|port).*?(\d{4,5})/i);
+  const portMatch =
+    text.match(/\b(?:port|PORT)\s*[:=]\s*(\d{2,5})\b/) ||
+    text.match(/\b(?:listening|listen|ready|running|serving)\b.*?\b(?:on|at)\b.*?\b(\d{2,5})\b/i);
   if (portMatch) return `http://localhost:${portMatch[1]}`;
   return "";
 }
@@ -286,6 +289,7 @@ async function collectCandidateDirs(root, maxDepth = 3) {
     "run_voice_clone_ui.bat",
     "run_voice_clone_api.bat",
     "run_voice_clone.bat",
+    "Chay_Project.bat",
     "run_project.bat",
     "start-n8n-local.ps1",
     "start-9router-hidden.ps1",
@@ -418,6 +422,7 @@ function addScriptProcess(project, folderPath, scriptName, port, enabled = true)
   const explicitNames = {
     "start-9router-hidden.ps1": "9router",
     "start-n8n-local.ps1": "n8n local",
+    "chay_project.bat": "MoneyPrinterTurbo UI",
     "run_voice_clone_ui.bat": "voice clone ui",
     "run_voice_clone_api.bat": "voice clone api"
   };
@@ -453,13 +458,18 @@ async function addDetectedProcesses(project, folderPath) {
   if (fssync.existsSync(path.join(folderPath, "run_voice_clone_ui.bat"))) preferredScripts.push("run_voice_clone_ui.bat");
   if (fssync.existsSync(path.join(folderPath, "run_voice_clone_api.bat"))) preferredScripts.push("run_voice_clone_api.bat");
   if (preferredScripts.length === 0 && fssync.existsSync(path.join(folderPath, "run_voice_clone.bat"))) preferredScripts.push("run_voice_clone.bat");
+  if (fssync.existsSync(path.join(folderPath, "Chay_Project.bat"))) preferredScripts.push("Chay_Project.bat");
   if (fssync.existsSync(path.join(folderPath, "start-n8n-local.ps1"))) preferredScripts.push("start-n8n-local.ps1");
   if (fssync.existsSync(path.join(folderPath, "start-9router-hidden.ps1"))) preferredScripts.push("start-9router-hidden.ps1");
   if (preferredScripts.length === 0 && fssync.existsSync(path.join(folderPath, "start.ps1"))) preferredScripts.push("start.ps1");
 
   for (const scriptName of preferredScripts) {
     if (!fssync.existsSync(path.join(folderPath, scriptName))) continue;
-    const scriptPort = scriptName === "run_voice_clone_ui.bat" ? 7861 : scriptName === "run_voice_clone_api.bat" ? 8002 : port;
+    const scriptPort =
+      scriptName === "run_voice_clone_ui.bat" ? 7861 :
+      scriptName === "run_voice_clone_api.bat" ? 8002 :
+      scriptName === "Chay_Project.bat" ? 8501 :
+      port;
     addScriptProcess(project, folderPath, scriptName, scriptPort, true);
   }
 
@@ -743,10 +753,24 @@ function killProcessTree(pid) {
 async function stopProcess(projectId, processId) {
   const key = processKey(projectId, processId);
   const state = running.get(key);
-  if (!state) return getRuntimeState();
-  pushLog(projectId, processId, "system", `Stopping PID ${state.child.pid}`);
-  await killProcessTree(state.child.pid);
-  running.delete(key);
+  if (state) {
+    pushLog(projectId, processId, "system", `Stopping PID ${state.child.pid}`);
+    await killProcessTree(state.child.pid);
+    running.delete(key);
+    sendState();
+    return getRuntimeState();
+  }
+
+  const externalState = portRuntime.get(key);
+  if (externalState?.pid) {
+    pushLog(projectId, processId, "system", `Force stopping external PID ${externalState.pid} on port ${externalState.port}`);
+    await killProcessTree(externalState.pid);
+    portRuntime.delete(key);
+    await refreshExternalRuntime();
+    sendState();
+    return getRuntimeState();
+  }
+
   sendState();
   return getRuntimeState();
 }

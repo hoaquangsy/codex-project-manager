@@ -335,8 +335,7 @@ function App() {
                             Start
                           </button>
                           <button
-                            title={runtime?.status === "external" ? "External process was not started by this app" : "Stop process"}
-                            disabled={runtime?.status === "external"}
+                            title={runtime?.status === "external" ? "Force stop external process by PID" : "Stop process"}
                             onClick={() => runAction("stop-process", () => api.stopProcess(editing.id, proc.id))}
                           >
                             <Square size={16} />
